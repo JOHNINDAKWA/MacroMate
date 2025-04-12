@@ -2,19 +2,19 @@
   "manifest_version": 3,
   "name": "MacroMate",
   "version": "1.0",
-  "description": "Scrape client data from PaygOps and autofill into Zendesk macros.",
+  "description": "An assistant tool that simplifies Zendesk tasks by fetching client data and generating macros and response comments with one click.",
   "action": {
     "default_popup": "index.html",
     "default_icon": {
-      "16": "react.svg",
-      "48": "react.svg",
-      "128": "react.svg"
+      "16": "cloves.png",
+      "48": "cloves.png",
+      "128": "cloves.png"
     }
   },
   "icons": {
-    "16": "react.svg",
-    "48": "react.svg",
-    "128": "react.svg"
+    "16": "cloves.png",
+    "48": "cloves.png",
+    "128": "cloves.png"
   },
   "permissions": [
     "tabs",
@@ -24,13 +24,13 @@
   ],
   "host_permissions": [
     "https://oneacrefund.paygops.com/*",
-    "https://oneacrefund-ke.zendesk.com/*"
+    "https://oneacrefund-ke.cloves.com/*"
   ],
   "content_scripts": [
     {
       "matches": [
         "https://oneacrefund.paygops.com/leads/*",
-        "https://oneacrefund-ke.zendesk.com/agent/tickets/new/*"
+        "https://oneacrefund-ke.cloves.com/agent/tickets/new/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

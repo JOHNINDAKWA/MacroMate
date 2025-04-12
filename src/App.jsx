@@ -1,31 +1,61 @@
 /* global chrome */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import macros from "./macros";
+import "./index.css";
 
 function App() {
   const [status, setStatus] = useState("");
   const [scraped, setScraped] = useState(null);
+  const [selectedMacro, setSelectedMacro] = useState("");
+  const [selectedComment, setSelectedComment] = useState(null);
+  const [callerPhone, setCallerPhone] = useState("");
+  const [filledMacro, setFilledMacro] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [isMacroGenerated, setIsMacroGenerated] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const dropdownRef = useRef(null);
 
-  // Function to scrape data
-  const handleScrape = () => {
-    // Check if data is available in chrome storage
+  useEffect(() => {
+    const listener = (msg) => {
+      if (msg.type === "SCRAPED_DATA") {
+        setScraped(msg.data);
+        setStatus("✅ Data fetched Successfully!");
+      }
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    return () => chrome.runtime.onMessage.removeListener(listener);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleFetch = () => {
     chrome.storage.local.get("scrapedData", (result) => {
       if (result.scrapedData) {
         setScraped(result.scrapedData);
-        setStatus("✅ Data loaded from local storage!");
+        setStatus("✅ Data fetched successfully");
         return;
       }
 
-      // If no data in local storage, scrape fresh data
       chrome.runtime.sendMessage({ type: "SCRAPE_DATA" }, (response) => {
         if (chrome.runtime.lastError || !response || !response.data) {
-          setStatus("❌ Could not connect to PaygOps. Are you on the right page?");
+          setStatus(
+            "❌ Could not connect to PaygOps. Are you on the right page?"
+          );
           return;
         }
 
-        setScraped(response.data); // ✅ Set state directly
-        setStatus("✅ Data scraped!");
-        
-        // Store the scraped data in chrome storage for future use
+        setScraped(response.data);
+        setStatus("✅ Data fetched successfully!");
+
         chrome.storage.local.set({ scrapedData: response.data }, () => {
           console.log("Data saved to local storage");
         });
@@ -33,104 +63,198 @@ function App() {
     });
   };
 
-// Function to paste data into Zendesk
-const handlePaste = () => {
-  chrome.runtime.sendMessage({ type: "PASTE_DATA" }, (response) => {
-    if (chrome.runtime.lastError) {
-      setStatus("❌ Error pasting data.");
-      return;
+  const applyMacro = (macroKey) => {
+    setSelectedMacro(macroKey);
+    setSearchQuery("");
+    setDropdownOpen(false);
+    setCallerPhone("");
+    setSelectedComment(null);
+    setFilledMacro("");
+  };
+
+  const handleGenerateMacro = () => {
+    setFilledMacro(""); // Clear existing
+
+    const macro = macros[selectedMacro];
+    if (macro && scraped) {
+      let finalText = macro.template(
+        scraped,
+        callerPhone,
+        selectedComment?.message || ""
+      );
+
+      // Adding space before "Comments:"
+      finalText = finalText.replace(/Comments:/g, "\n\nComments:");
+
+      setFilledMacro(finalText.trim());
+      setIsMacroGenerated(true);
     }
-    if (response && response.status === "Data pasted!") {
-      setScraped(null); // Reset the scraped data after pasting
-      setStatus("📋 Data pasted into Zendesk!");
-    } else {
-      setStatus("❌ Error: No data available to paste.");
-    }
-  });
-};
+  };
 
-
-  // ✅ Set up listener only once for SCRAPED_DATA
-  useEffect(() => {
-    const listener = (msg) => {
-      if (msg.type === "SCRAPED_DATA") {
-        setScraped(msg.data);
-        setStatus("✅ Data scraped!");
-      }
-    };
-
-    chrome.runtime.onMessage.addListener(listener);
-
-    // Cleanup listener on component unmount
-    return () => chrome.runtime.onMessage.removeListener(listener);
-  }, []);
+  const filteredMacros = Object.keys(macros).filter((key) =>
+    key.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <div style={{
-      padding: "1rem",
-      width: "300px",
-      fontFamily: "Segoe UI, sans-serif",
-      background: "#f4f4f4",
-      borderRadius: "10px",
-      boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
-    }}>
-      <h2 style={{ marginBottom: "1rem", color: "#333" }}>🚀 MacroMate</h2>
+    <div
+    className="extension-container"
+    style={{ height: dropdownOpen ? "600px" : "auto" }}
+  >
+      <h2>🍀 MacroMate</h2>
 
-      <button
-        onClick={handleScrape}
-        style={{
-          width: "100%",
-          padding: "0.5rem",
-          background: "#007bff",
-          color: "white",
-          border: "none",
-          borderRadius: "6px",
-          marginBottom: "0.5rem",
-          cursor: "pointer"
-        }}
-      >
-        🔍 Scrape from PaygOps
-      </button>
-
-      <button
-        onClick={handlePaste}
-        style={{
-          width: "100%",
-          padding: "0.5rem",
-          background: "#28a745",
-          color: "white",
-          border: "none",
-          borderRadius: "6px",
-          cursor: "pointer"
-        }}
-      >
-        📋 Paste into Zendesk
+      <button className="btn-scrape" onClick={handleFetch}>
+        🔍 Fetch Data from PaygOps
       </button>
 
       {status && (
-        <p style={{ marginTop: "0.5rem", color: "#555" }}>
+        <p className="status-msg">
           <strong>{status}</strong>
         </p>
       )}
 
       {scraped && (
-        <div style={{
-          marginTop: "1rem",
-          padding: "0.75rem",
-          background: "#fff",
-          borderRadius: "6px",
-          border: "1px solid #ddd"
-        }}>
-          <p><strong>👤 Name:</strong> {scraped.clientName}</p>
-          <p><strong>🆔 National ID / Account #:</strong> {scraped.nationalId}</p>
-          <p><strong>📞 Phone:</strong> {scraped.phoneNumber}</p>
-          <p><strong>🧭 Sales Territory:</strong> {scraped.salesTerritory}</p>
-          <p><strong>🏪 Duka Zone:</strong> {scraped.dukaZone}</p>
-          <p><strong>🔢 Lead ID:</strong> {scraped.leadId}</p>
-          <p><strong>🎂 DOB:</strong> {scraped.dob}</p>
-          <p><strong>📌 Status:</strong> {scraped.status}</p>
-          <p><strong>📝 Status Comment:</strong> {scraped.comment}</p>
-        </div>
+        <>
+          <div className="scraped-box">
+            <p>
+              <strong>🙍‍♀️ Name:</strong> {scraped.clientName}
+            </p>
+            <p>
+              <strong>🆔 National ID / Account #:</strong> {scraped.nationalId}
+            </p>
+            <p>
+              <strong>📌 Status:</strong> {scraped.status}
+            </p>
+
+            {/* Requestor Section */}
+            <div className="requestor-row">
+              <p>
+                <strong>🪪 Requestor:</strong>{" "}
+                {`${scraped.clientName || ""} ${scraped.nationalId || ""}`}
+              </p>
+              <button
+                className="btn-copy-requestor"
+                onClick={() => {
+                  navigator.clipboard
+                    .writeText(
+                      `${scraped.clientName || ""} ${scraped.nationalId || ""}`
+                    )
+                    .then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    });
+                }}
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+          </div>
+
+          <div className="macrobar-wrapper" ref={dropdownRef}>
+            {dropdownOpen ? (
+              <input
+                type="text"
+                className="macro-search"
+                placeholder="Search macros..."
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            ) : (
+              <div
+                className="macrobar-label"
+                onClick={() => setDropdownOpen(true)}
+              >
+                <p>{selectedMacro || "🧾 Select Macro"}</p>
+                <p>⮟</p>
+              </div>
+            )}
+
+            {dropdownOpen && (
+              <div className="macrobar-dropdown">
+                {filteredMacros.length > 0 ? (
+                  filteredMacros.map((key) => (
+                    <div
+                      key={key}
+                      className="macrobar-item"
+                      onClick={() => applyMacro(key)}
+                    >
+                      {key}
+                    </div>
+                  ))
+                ) : (
+                  <div className="macrobar-no-result">No matching macros</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Caller Phone Input */}
+          {selectedMacro && (
+            <div className="caller-section">
+              <input
+                type="text"
+                className="caller-input"
+                value={callerPhone}
+                onChange={(e) => setCallerPhone(e.target.value)}
+                placeholder="📞 Enter caller number"
+              />
+            </div>
+          )}
+
+          {/* Comment Selection */}
+          {selectedMacro && macros[selectedMacro]?.comments && (
+            <div className="comment-section">
+              <p>
+                <strong>💬🗨️ Choose a Comment: </strong>
+              </p>
+              {macros[selectedMacro].comments.map((comment, idx) => (
+                <div
+                  key={idx}
+                  className={`comment-option ${
+                    selectedComment?.label === comment.label ? "active" : ""
+                  }`}
+                  onClick={() => setSelectedComment(comment)}
+                >
+                  <strong>{comment.label}</strong>
+                  <p>{comment.message.slice(0, 200)}...</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Generate Macro Button */}
+          {selectedMacro && (
+            <div className="centred">
+              <button className="btn-generate" onClick={handleGenerateMacro}>
+                ✍️ {isMacroGenerated ? "Update Macro" : "Generate Macro"}
+              </button>
+            </div>
+          )}
+
+          {/* Macro Output and Copy */}
+          {filledMacro && (
+            <>
+              <textarea
+                className="macro-output"
+                readOnly
+                value={filledMacro}
+                onFocus={(e) => e.target.select()}
+              />
+
+              <button
+                className="btn-copy"
+                onClick={() => {
+                  navigator.clipboard.writeText(filledMacro).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  });
+                }}
+              >
+                {copied ? "✅ Copied!" : "📋 Copy"}
+              </button>
+            </>
+          )}
+        </>
       )}
     </div>
   );
