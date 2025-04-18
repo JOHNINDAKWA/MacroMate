@@ -8,13 +8,25 @@ function App() {
   const [scraped, setScraped] = useState(null);
   const [selectedMacro, setSelectedMacro] = useState("");
   const [selectedComment, setSelectedComment] = useState(null);
-  const [callerPhone, setCallerPhone] = useState("");
   const [filledMacro, setFilledMacro] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isMacroGenerated, setIsMacroGenerated] = useState(false);
-  const [copied, setCopied] = useState(false);
+
+  const [callerPhone, setCallerPhone] = useState("");
+
+  // state for the Connex call phone
+  const [connexPhone, setConnexPhone] = useState("");
+
+  // Replace the single copied state with two separate ones
+  const [callerCopied, setCallerCopied] = useState(false);
+  const [requestorCopied, setRequestorCopied] = useState(false);
+  const [macroCopied, setMacroCopied] = useState(false);
+
   const dropdownRef = useRef(null);
+  const macroRef = useRef(null);
+  const generateBtnRef = useRef(null);
+
 
   useEffect(() => {
     const listener = (msg) => {
@@ -38,9 +50,10 @@ function App() {
   }, []);
 
   const handleFetch = () => {
-    chrome.storage.local.get("scrapedData", (result) => {
+    chrome.storage.local.get(["scrapedData", "connexPhone"], (result) => {
       if (result.scrapedData) {
         setScraped(result.scrapedData);
+        setConnexPhone(result.connexPhone || "");
         setStatus("✅ Data fetched successfully");
         return;
       }
@@ -55,9 +68,11 @@ function App() {
 
         setScraped(response.data);
         setStatus("✅ Data fetched successfully!");
+        chrome.storage.local.set({ scrapedData: response.data });
 
-        chrome.storage.local.set({ scrapedData: response.data }, () => {
-          console.log("Data saved to local storage");
+        // then load any Connex‑scraped number
+        chrome.storage.local.get("connexPhone", (r) => {
+          if (r.connexPhone) setConnexPhone(r.connexPhone);
         });
       });
     });
@@ -73,21 +88,23 @@ function App() {
   };
 
   const handleGenerateMacro = () => {
-    setFilledMacro(""); // Clear existing
-
+    setFilledMacro("");
     const macro = macros[selectedMacro];
     if (macro && scraped) {
       let finalText = macro.template(
         scraped,
-        callerPhone,
+        connexPhone,
         selectedComment?.message || ""
       );
 
-      // Adding space before "Comments:"
-      finalText = finalText.replace(/Comments:/g, "\n\nComments:");
-
+      // finalText = finalText.replace(/Comments:/g, "\n\nComments:");
       setFilledMacro(finalText.trim());
       setIsMacroGenerated(true);
+
+      // Scroll after a tiny delay to ensure macro is rendered
+  setTimeout(() => {
+    macroRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, 50);
     }
   };
 
@@ -97,9 +114,9 @@ function App() {
 
   return (
     <div
-    className="extension-container"
-    style={{ height: dropdownOpen ? "600px" : "auto" }}
-  >
+      className="extension-container"
+      style={{ height: dropdownOpen ? "600px" : "auto" }}
+    >
       <h2>🍀 MacroMate</h2>
 
       <button className="btn-scrape" onClick={handleFetch}>
@@ -114,41 +131,55 @@ function App() {
 
       {scraped && (
         <>
-          <div className="scraped-box">
-            <p>
-              <strong>🙍‍♀️ Name:</strong> {scraped.clientName}
-            </p>
-            <p>
-              <strong>🆔 National ID / Account #:</strong> {scraped.nationalId}
-            </p>
-            <p>
-              <strong>📌 Status:</strong> {scraped.status}
-            </p>
+          <div className="scraped-compact">
+            {/* Name */}
+            <div className="line">
+              <span className="label">🙍‍♀️ Name:</span>
+              <span className="value">{scraped.clientName}</span>
+            </div>
 
-            {/* Requestor Section */}
-            <div className="requestor-row">
-              <p>
-                <strong>🪪 Requestor:</strong>{" "}
+            {/* Caller Phone */}
+            {connexPhone && (
+              <div className="line">
+                <span className="label">📞 Phone:</span>
+                <span className="value">{connexPhone}</span>
+                <button
+                  className="btn-mini"
+                  onClick={() => {
+                    navigator.clipboard.writeText(connexPhone).then(() => {
+                      setCallerCopied(true);
+                      setTimeout(() => setCallerCopied(false), 2000);
+                    });
+                  }}
+                >
+                  {callerCopied ? "✓ copied" : "📋 copy"}
+                </button>
+              </div>
+            )}
+
+            {/* Requestor */}
+            <div className="line">
+              <span className="label">🪪 Requestor:</span>
+              <span className="value">
                 {`${scraped.clientName || ""} ${scraped.nationalId || ""}`}
-              </p>
+              </span>
               <button
-                className="btn-copy-requestor"
+                className="btn-mini"
                 onClick={() => {
                   navigator.clipboard
                     .writeText(
                       `${scraped.clientName || ""} ${scraped.nationalId || ""}`
                     )
                     .then(() => {
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
+                      setRequestorCopied(true);
+                      setTimeout(() => setRequestorCopied(false), 2000);
                     });
                 }}
               >
-                {copied ? "Copied!" : "Copy"}
+                {requestorCopied ? "✓ copied" : "📋 copy"}
               </button>
             </div>
           </div>
-
           <div className="macrobar-wrapper" ref={dropdownRef}>
             {dropdownOpen ? (
               <input
@@ -182,22 +213,34 @@ function App() {
                     </div>
                   ))
                 ) : (
-                  <div className="macrobar-no-result">No matching macros</div>
+                  <div className="macrobar-no-result">No matching macros. Want the macro to be added?</div>
                 )}
               </div>
             )}
           </div>
 
-          {/* Caller Phone Input */}
           {selectedMacro && (
-            <div className="caller-section">
+            <div className="caller-smart">
+              <label htmlFor="connex-phone-input" className="caller-label">
+                ☎️ Caller:
+              </label>
               <input
+                id="connex-phone-input"
                 type="text"
-                className="caller-input"
-                value={callerPhone}
-                onChange={(e) => setCallerPhone(e.target.value)}
-                placeholder="📞 Enter caller number"
+                className="caller-smart-input"
+                value={connexPhone}
+                onChange={(e) => setConnexPhone(e.target.value)}
+                placeholder="Enter number"
               />
+              {connexPhone && (
+                <button
+                  className="btn-clear"
+                  onClick={() => setConnexPhone("")}
+                  title="Clear"
+                >
+                  ✖
+                </button>
+              )}
             </div>
           )}
 
@@ -213,10 +256,20 @@ function App() {
                   className={`comment-option ${
                     selectedComment?.label === comment.label ? "active" : ""
                   }`}
-                  onClick={() => setSelectedComment(comment)}
+                  onClick={() => {
+                    setSelectedComment(comment);
+                  
+                    // Scroll to generate button after comment is selected
+                    setTimeout(() => {
+                      generateBtnRef.current?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "center",
+                      });
+                    }, 50);
+                  }}
                 >
                   <strong>{comment.label}</strong>
-                  <p>{comment.message.slice(0, 200)}...</p>
+                  <p>{comment.message.slice(0, 230)}...</p>
                 </div>
               ))}
             </div>
@@ -224,7 +277,7 @@ function App() {
 
           {/* Generate Macro Button */}
           {selectedMacro && (
-            <div className="centred">
+            <div className="centred" ref={generateBtnRef}>
               <button className="btn-generate" onClick={handleGenerateMacro}>
                 ✍️ {isMacroGenerated ? "Update Macro" : "Generate Macro"}
               </button>
@@ -233,10 +286,10 @@ function App() {
 
           {/* Macro Output and Copy */}
           {filledMacro && (
-            <>
+            <div ref={macroRef}>
               <textarea
                 className="macro-output"
-                readOnly
+                // readOnly
                 value={filledMacro}
                 onFocus={(e) => e.target.select()}
               />
@@ -245,14 +298,14 @@ function App() {
                 className="btn-copy"
                 onClick={() => {
                   navigator.clipboard.writeText(filledMacro).then(() => {
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
+                    setMacroCopied(true);
+                    setTimeout(() => setMacroCopied(false), 2000);
                   });
                 }}
               >
-                {copied ? "✅ Copied!" : "📋 Copy"}
+                {macroCopied ? "✓ Copied!" : "📋 Copy"}
               </button>
-            </>
+            </div>
           )}
         </>
       )}
